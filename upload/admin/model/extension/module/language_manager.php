@@ -117,7 +117,7 @@ class ModelExtensionModuleLanguageManager extends Model {
      * Works whether the admin is at /admin or a custom path.
      */
     private function getOcRoot() {
-        return rtrim(DIR_APPLICATION, '/admin/') . '/';
+        return dirname(rtrim(DIR_APPLICATION, '/\\')) . '/';
     }
 
     /**
@@ -146,6 +146,16 @@ class ModelExtensionModuleLanguageManager extends Model {
         }
         sort($files);
         return $files;
+    }
+
+    public function hasLanguageSource($directory) {
+        foreach (['admin', 'catalog'] as $area) {
+            if (is_dir($this->getOcRoot() . $area . '/language/' . $directory)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -310,33 +320,54 @@ class ModelExtensionModuleLanguageManager extends Model {
         $tgtKeys  = $this->readLanguageFileKeys($tgtPath);
         $appended = [];
 
-        $lines = ["<?php\n"];
         if ($override) {
-            // Rebuild entire file from reference keys, keeping tgt values where present.
+            $lines = ["<?php\n"];
+
             foreach ($refKeys as $key => $refVal) {
-                $val = isset($tgtKeys[$key]) ? $tgtKeys[$key] : $refVal;
-                $lines[] = '$_[\'' . addslashes($key) . '\'] = \'' . addslashes($val) . "';\n";
-                if (!isset($tgtKeys[$key])) {
-                    $appended[] = $key;
+                $lines[] = '$_[\'' . addslashes($key) . '\'] = \'' . addslashes($refVal) . "';\n";
+                $appended[] = $key;
+            }
+
+            foreach ($tgtKeys as $key => $value) {
+                if (!array_key_exists($key, $refKeys)) {
+                    $lines[] = '$_[\'' . addslashes($key) . '\'] = \'' . addslashes($value) . "';\n";
                 }
             }
         } else {
-            // Keep existing file content and append only missing keys.
-            $existingContent = file_get_contents($tgtPath);
-            $lines = [$existingContent];
-            if (substr(rtrim($existingContent), -2) !== "\n") {
-                $lines[] = "\n";
-            }
-            $lines[] = "\n// --- auto-generated stubs (untranslated) ---\n";
+            $missingKeys = [];
+
             foreach ($refKeys as $key => $refVal) {
                 if (!array_key_exists($key, $tgtKeys)) {
-                    $lines[]  = '$_[\'' . addslashes($key) . '\'] = \'' . addslashes($refVal) . "';\n";
-                    $appended[] = $key;
+                    $missingKeys[$key] = $refVal;
                 }
+            }
+
+            if (!$missingKeys) {
+                return ['appended' => [], 'error' => null];
+            }
+
+            $existingContent = file_get_contents($tgtPath);
+            if ($existingContent === false) {
+                return ['appended' => [], 'error' => 'Cannot read target file: ' . $relFile];
+            }
+
+            $lines = [$existingContent];
+            if ($existingContent !== '' && substr($existingContent, -1) !== "\n") {
+                $lines[] = "\n";
+            }
+
+            $lines[] = "\n// --- auto-generated stubs (untranslated) ---\n";
+
+            foreach ($missingKeys as $key => $refVal) {
+                $lines[] = '$_[\'' . addslashes($key) . '\'] = \'' . addslashes($refVal) . "';\n";
+                $appended[] = $key;
             }
         }
 
-        file_put_contents($tgtPath, implode('', $lines));
+        if (file_put_contents($tgtPath, implode('', $lines)) === false) {
+            return ['appended' => [], 'error' => 'Cannot write target file: ' . $relFile];
+        }
+
         return ['appended' => $appended, 'error' => null];
     }
 

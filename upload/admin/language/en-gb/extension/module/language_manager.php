@@ -34,6 +34,14 @@ $_['text_enabled']              = 'Enabled';
 $_['text_disabled']             = 'Disabled';
 $_['text_installed']            = 'Installed';
 $_['text_not_installed']        = 'Not installed';
+$_['text_no_results']            = 'No results';
+$_['text_select_all']            = 'Select All';
+$_['text_deselect_all']          = 'Deselect All';
+$_['text_confirm_scaffold']      = 'Scaffold missing files?';
+$_['text_confirm_sync_keys']     = 'Sync missing keys from the selected reference language?';
+$_['text_confirm_sync_keys_override'] = 'Rebuild keys from the selected reference language and overwrite existing ones?';
+$_['text_action_result']         = 'Action Result';
+$_['text_action_success']        = 'Completed successfully.';
 
 // Success messages
 $_['text_success_enabled']      = 'Success: Language enabled.';
@@ -54,8 +62,13 @@ $_['text_scan_missing_files']   = 'Missing files';
 $_['text_scan_missing_keys']    = 'Missing keys';
 $_['text_scan_ok']              = 'Complete';
 $_['text_scan_loading']         = 'Scanning…';
+$_['text_files_scaffolded']      = '%d file(s) scaffolded.';
+$_['text_keys_processed']        = '%d key(s) processed.';
+$_['text_ajax_error']            = 'AJAX error';
 
 // Errors
 $_['error_permission']          = 'Warning: You do not have permission to manage languages!';
 $_['error_no_selection']        = 'Warning: Please select at least one language.';
+$_['error_invalid_reference']    = 'Warning: Please choose a valid reference language.';
+$_['error_invalid_language']     = 'Warning: Please choose a valid installed language.';
 $_['error_partial']             = 'Warning: Some operations completed with errors. Check the log above.';

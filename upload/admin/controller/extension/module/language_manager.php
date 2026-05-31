@@ -19,6 +19,53 @@
 class ControllerExtensionModuleLanguageManager extends Controller {
 
     private $error = [];
+    private $languageDataKeys = [
+        'heading_title',
+        'text_home',
+        'text_extension',
+        'text_installed_languages',
+        'text_add_language',
+        'text_reference_language',
+        'text_reference_help',
+        'text_enabled',
+        'text_disabled',
+        'text_installed',
+        'text_not_installed',
+        'text_no_results',
+        'text_select_all',
+        'text_deselect_all',
+        'text_confirm_scaffold',
+        'text_confirm_sync_keys',
+        'text_confirm_sync_keys_override',
+        'text_action_result',
+        'text_action_success',
+        'text_scan_result',
+        'text_scan_missing_files',
+        'text_scan_missing_keys',
+        'text_scan_ok',
+        'text_scan_loading',
+        'text_files_scaffolded',
+        'text_keys_processed',
+        'text_ajax_error',
+        'column_name',
+        'column_code',
+        'column_directory',
+        'column_locale',
+        'column_status',
+        'column_action',
+        'button_add',
+        'button_enable',
+        'button_disable',
+        'button_scan',
+        'button_scaffold',
+        'button_sync_keys',
+        'button_sync_keys_override',
+        'error_permission',
+        'error_no_selection',
+        'error_invalid_reference',
+        'error_invalid_language',
+        'error_partial',
+    ];
 
     // ── Install / Uninstall ──────────────────────────────────────────────────
 
@@ -41,6 +88,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         $this->document->setTitle($this->language->get('heading_title'));
 
         $data = $this->_buildCommon();
+        $data += $this->getLanguageData();
 
         // ── Installed languages ──────────────────────────────────────────────
         $installed   = $this->model_extension_module_language_manager->getAllLanguages();
@@ -60,6 +108,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
                 'url_disable' => $this->url->link('extension/module/language_manager/disable', 'user_token=' . $this->session->data['user_token'] . '&language_id=' . $lang['language_id'], true),
                 'url_scan'    => $this->url->link('extension/module/language_manager/scan', 'user_token=' . $this->session->data['user_token'] . '&directory=' . $lang['directory'], true),
                 'url_scaffold' => $this->url->link('extension/module/language_manager/scaffold', 'user_token=' . $this->session->data['user_token'] . '&directory=' . $lang['directory'], true),
+                'url_sync_keys' => $this->url->link('extension/module/language_manager/sync_keys', 'user_token=' . $this->session->data['user_token'] . '&directory=' . $lang['directory'], true),
             ];
         }
 
@@ -75,8 +124,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         }
 
         // ── Form action URLs ─────────────────────────────────────────────────
-        $data['url_add']      = $this->url->link('extension/module/language_manager/add', 'user_token=' . $this->session->data['user_token'], true);
-        $data['url_scaffold_all'] = $this->url->link('extension/module/language_manager/scaffold', 'user_token=' . $this->session->data['user_token'], true);
+        $data['url_add'] = $this->url->link('extension/module/language_manager/add', 'user_token=' . $this->session->data['user_token'], true);
 
         // ── Flash messages ───────────────────────────────────────────────────
         if (isset($this->session->data['success'])) {
@@ -86,9 +134,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
             $data['success'] = '';
         }
         if ($this->error) {
-            $data['error_warning'] = implode('<br>', $this->error);
-        } else {
-            $data['error_warning'] = '';
+            $data['error_warning'] .= ($data['error_warning'] ? '<br>' : '') . implode('<br>', $this->error);
         }
 
         $data['header']      = $this->load->controller('common/header');
@@ -107,21 +153,30 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         if (!$this->_hasPermission()) {
             $this->session->data['error'] = $this->language->get('error_permission');
             $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
+            return;
         }
 
-        $selected = isset($this->request->post['selected']) ? (array)$this->request->post['selected'] : [];
-        $reference = isset($this->request->post['reference']) ? $this->request->post['reference'] : 'en-gb';
+        $selected = isset($this->request->post['selected']) ? array_unique((array)$this->request->post['selected']) : [];
+        $reference = $this->getValidReference(isset($this->request->post['reference']) ? $this->request->post['reference'] : 'en-gb');
 
         if (empty($selected)) {
             $this->session->data['error'] = $this->language->get('error_no_selection');
             $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
+            return;
+        }
+
+        if ($reference === null) {
+            $this->session->data['error'] = $this->language->get('error_invalid_reference');
+            $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
+            return;
         }
 
         $log     = [];
         $hasError = false;
 
         foreach ($selected as $directory) {
-            $preset = $this->model_extension_module_language_manager->getPreset($directory);
+            $directory = $this->normalizeLanguageDirectory($directory);
+            $preset = $directory ? $this->model_extension_module_language_manager->getPreset($directory) : null;
             if (!$preset) {
                 $log[] = sprintf($this->language->get('text_log_preset_missing'), $directory);
                 $hasError = true;
@@ -208,15 +263,20 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         $this->load->model('extension/module/language_manager');
 
         if (!$this->_hasPermission()) {
-            $this->response->setOutput(json_encode(['error' => $this->language->get('error_permission')]));
+            $this->jsonResponse(['error' => $this->language->get('error_permission')]);
             return;
         }
 
-        $directory = isset($this->request->get['directory']) ? $this->request->get['directory'] : '';
-        $reference = isset($this->request->get['reference']) ? $this->request->get['reference'] : 'en-gb';
+        $directory = $this->getInstalledDirectory();
+        $reference = $this->getValidReference(isset($this->request->get['reference']) ? $this->request->get['reference'] : 'en-gb');
 
-        if (!$directory) {
-            $this->response->setOutput(json_encode(['error' => 'No directory specified']));
+        if ($directory === null) {
+            $this->jsonResponse(['error' => $this->language->get('error_invalid_language')]);
+            return;
+        }
+
+        if ($reference === null) {
+            $this->jsonResponse(['error' => $this->language->get('error_invalid_reference')]);
             return;
         }
 
@@ -237,7 +297,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
             ];
         }
 
-        $this->response->setOutput(json_encode(['success' => true, 'report' => $summary]));
+        $this->jsonResponse(['success' => true, 'report' => $summary]);
     }
 
     // ── Scaffold Missing Files (AJAX) ────────────────────────────────────────
@@ -247,15 +307,20 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         $this->load->model('extension/module/language_manager');
 
         if (!$this->_hasPermission()) {
-            $this->response->setOutput(json_encode(['error' => $this->language->get('error_permission')]));
+            $this->jsonResponse(['error' => $this->language->get('error_permission')]);
             return;
         }
 
-        $directory = isset($this->request->get['directory']) ? $this->request->get['directory'] : '';
-        $reference = isset($this->request->get['reference']) ? $this->request->get['reference'] : 'en-gb';
+        $directory = $this->getInstalledDirectory();
+        $reference = $this->getValidReference(isset($this->request->get['reference']) ? $this->request->get['reference'] : 'en-gb');
 
-        if (!$directory) {
-            $this->response->setOutput(json_encode(['error' => 'No directory specified']));
+        if ($directory === null) {
+            $this->jsonResponse(['error' => $this->language->get('error_invalid_language')]);
+            return;
+        }
+
+        if ($reference === null) {
+            $this->jsonResponse(['error' => $this->language->get('error_invalid_reference')]);
             return;
         }
 
@@ -265,7 +330,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
             $results[$area] = $r;
         }
 
-        $this->response->setOutput(json_encode(['success' => true, 'results' => $results]));
+        $this->jsonResponse(['success' => true, 'results' => $results]);
     }
 
     // ── Sync Missing Keys (AJAX) ─────────────────────────────────────────────
@@ -275,16 +340,21 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         $this->load->model('extension/module/language_manager');
 
         if (!$this->_hasPermission()) {
-            $this->response->setOutput(json_encode(['error' => $this->language->get('error_permission')]));
+            $this->jsonResponse(['error' => $this->language->get('error_permission')]);
             return;
         }
 
-        $directory = isset($this->request->get['directory']) ? $this->request->get['directory'] : '';
-        $reference = isset($this->request->get['reference']) ? $this->request->get['reference'] : 'en-gb';
+        $directory = $this->getInstalledDirectory();
+        $reference = $this->getValidReference(isset($this->request->get['reference']) ? $this->request->get['reference'] : 'en-gb');
         $override  = !empty($this->request->get['override']);
 
-        if (!$directory) {
-            $this->response->setOutput(json_encode(['error' => 'No directory specified']));
+        if ($directory === null) {
+            $this->jsonResponse(['error' => $this->language->get('error_invalid_language')]);
+            return;
+        }
+
+        if ($reference === null) {
+            $this->jsonResponse(['error' => $this->language->get('error_invalid_reference')]);
             return;
         }
 
@@ -302,11 +372,11 @@ class ControllerExtensionModuleLanguageManager extends Controller {
             }
         }
 
-        $this->response->setOutput(json_encode([
+        $this->jsonResponse([
             'success'        => empty($errors),
             'keys_appended'  => $totalAppended,
             'errors'         => $errors,
-        ]));
+        ]);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -342,5 +412,50 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         }
 
         return $data;
+    }
+
+    private function getLanguageData() {
+        $data = [];
+
+        foreach ($this->languageDataKeys as $key) {
+            $data[$key] = $this->language->get($key);
+        }
+
+        return $data;
+    }
+
+    private function normalizeLanguageDirectory($directory) {
+        $directory = is_string($directory) ? strtolower(trim($directory)) : '';
+
+        if ($directory && preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $directory)) {
+            return $directory;
+        }
+
+        return null;
+    }
+
+    private function getInstalledDirectory() {
+        $directory = $this->normalizeLanguageDirectory(isset($this->request->get['directory']) ? $this->request->get['directory'] : '');
+
+        if (!$directory) {
+            return null;
+        }
+
+        return $this->model_extension_module_language_manager->getLanguageByDirectory($directory) ? $directory : null;
+    }
+
+    private function getValidReference($reference) {
+        $reference = $this->normalizeLanguageDirectory($reference);
+
+        if (!$reference) {
+            return null;
+        }
+
+        return $this->model_extension_module_language_manager->hasLanguageSource($reference) ? $reference : null;
+    }
+
+    private function jsonResponse(array $payload) {
+        $this->response->addHeader('Content-Type: application/json');
+        $this->response->setOutput(json_encode($payload));
     }
 }

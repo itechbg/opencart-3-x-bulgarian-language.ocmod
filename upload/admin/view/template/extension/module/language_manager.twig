@@ -82,12 +82,37 @@
                             title="{{ button_scan }}">
                       <i class="fa fa-search"></i> {{ button_scan }}
                     </button>
-                    <a href="{{ language.url_scaffold }}"
-                       class="btn btn-sm btn-default btn-scaffold"
-                       title="{{ button_scaffold }}"
-                       onclick="return confirm('{{ text_confirm_scaffold | default('Scaffold missing files?') }}');">
+                    <button type="button"
+                           class="btn btn-sm btn-default btn-language-action"
+                           data-directory="{{ language.directory }}"
+                           data-url="{{ language.url_scaffold }}"
+                           data-confirm="{{ text_confirm_scaffold }}"
+                           data-title="{{ button_scaffold }}"
+                           data-mode="scaffold"
+                           title="{{ button_scaffold }}">
                       <i class="fa fa-files-o"></i> {{ button_scaffold }}
-                    </a>
+                    </button>
+                    <button type="button"
+                           class="btn btn-sm btn-primary btn-language-action"
+                           data-directory="{{ language.directory }}"
+                           data-url="{{ language.url_sync_keys }}"
+                           data-confirm="{{ text_confirm_sync_keys }}"
+                           data-title="{{ button_sync_keys }}"
+                           data-mode="sync"
+                           title="{{ button_sync_keys }}">
+                     <i class="fa fa-refresh"></i> {{ button_sync_keys }}
+                    </button>
+                    <button type="button"
+                           class="btn btn-sm btn-danger btn-language-action"
+                           data-directory="{{ language.directory }}"
+                           data-url="{{ language.url_sync_keys }}"
+                           data-confirm="{{ text_confirm_sync_keys_override }}"
+                           data-title="{{ button_sync_keys_override }}"
+                           data-mode="sync-override"
+                           data-override="1"
+                           title="{{ button_sync_keys_override }}">
+                     <i class="fa fa-refresh"></i> {{ button_sync_keys_override }}
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -124,7 +149,7 @@
           <div class="form-group">
             <label class="col-sm-2 control-label">{{ text_reference_language }}</label>
             <div class="col-sm-4">
-              <select name="reference" class="form-control">
+              <select name="reference" id="input-reference-language" class="form-control">
                 {% for dir, preset in presets %}
                 <option value="{{ dir }}" {% if dir == 'en-gb' %}selected{% endif %}>
                   {{ preset.name }} ({{ dir }})
@@ -188,13 +213,39 @@
 {# ── JavaScript ───────────────────────────────────────────────────────────── #}
 <script type="text/javascript"><!--
 (function ($) {
+  function escapeHtml(text) {
+    return $('<div>').text(text).html();
+  }
+
+  function getReferenceUrl(url, override) {
+    var reference = $('#input-reference-language').val() || 'en-gb';
+    var separator = url.indexOf('?') === -1 ? '?' : '&';
+
+    url += separator + 'reference=' + encodeURIComponent(reference);
+
+    if (override) {
+      url += '&override=1';
+    }
+
+    return url;
+  }
+
+  function renderActionResult(dir, title, bodyHtml) {
+    var rowId = 'scan-row-' + dir.replace(/-/g, '_');
+    var resultId = 'scan-result-' + dir.replace(/-/g, '_');
+    var $row = $('#' + rowId);
+    var $result = $('#' + resultId);
+
+    $row.removeClass('hidden');
+    $result.html('<strong>' + escapeHtml(title) + '</strong><br>' + bodyHtml);
+  }
 
   // ── Coverage Scan ──────────────────────────────────────────────────────────
   $(document).on('click', '.btn-scan', function (e) {
     e.preventDefault();
 
     var dir     = $(this).data('directory');
-    var url     = $(this).data('url');
+    var url     = getReferenceUrl($(this).data('url'), false);
     var rowId   = 'scan-row-'    + dir.replace(/-/g, '_');
     var resultId = 'scan-result-' + dir.replace(/-/g, '_');
     var $row    = $('#' + rowId);
@@ -234,7 +285,72 @@
       });
       $result.html(html);
     }).fail(function () {
-      $result.html('<span class="text-danger"><i class="fa fa-times-circle"></i> AJAX error</span>');
+      $result.html('<span class="text-danger"><i class="fa fa-times-circle"></i> {{ text_ajax_error }}</span>');
+    });
+  });
+
+  $(document).on('click', '.btn-language-action', function (e) {
+    e.preventDefault();
+
+    var $button = $(this);
+    var dir = $button.data('directory');
+    var url = getReferenceUrl($button.data('url'), !!$button.data('override'));
+    var title = $button.data('title');
+    var confirmText = $button.data('confirm');
+    var originalHtml = $button.html();
+
+    if (confirmText && !window.confirm(confirmText)) {
+      return;
+    }
+
+    $button.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i>');
+    renderActionResult(dir, title, '<i class="fa fa-spinner fa-spin"></i> {{ text_scan_loading }}');
+
+    $.getJSON(url, function (data) {
+      var html = '';
+
+      if (data.error) {
+        html = '<span class="text-danger"><i class="fa fa-times-circle"></i> ' + escapeHtml(data.error) + '</span>';
+      } else if ($button.data('mode') === 'scaffold') {
+        $.each(data.results || {}, function (area, info) {
+          var created = (info.created || []).length;
+          var errors = info.errors || [];
+
+          html += '<strong>' + escapeHtml(area.charAt(0).toUpperCase() + area.slice(1)) + '</strong>: ';
+          html += '<span class="text-success">' + escapeHtml('{{ text_files_scaffolded }}'.replace('%d', created)) + '</span>';
+
+          if (errors.length) {
+            html += '<ul class="text-danger small">';
+            $.each(errors, function (index, error) {
+              html += '<li>' + escapeHtml(error) + '</li>';
+            });
+            html += '</ul>';
+          } else {
+            html += '<br>';
+          }
+        });
+      } else {
+        html += '<span class="' + (data.success ? 'text-success' : 'text-warning') + '"><i class="fa ' + (data.success ? 'fa-check' : 'fa-exclamation-triangle') + '"></i> ';
+        html += escapeHtml('{{ text_keys_processed }}'.replace('%d', data.keys_appended)) + '</span>';
+
+        if (data.errors && data.errors.length) {
+          html += '<ul class="text-danger small">';
+          $.each(data.errors, function (index, error) {
+            html += '<li>' + escapeHtml(error) + '</li>';
+          });
+          html += '</ul>';
+        }
+      }
+
+      if (!html) {
+        html = '<span class="text-success"><i class="fa fa-check"></i> {{ text_action_success }}</span>';
+      }
+
+      renderActionResult(dir, '{{ text_action_result }}: ' + title, html);
+    }).fail(function () {
+      renderActionResult(dir, '{{ text_action_result }}: ' + title, '<span class="text-danger"><i class="fa fa-times-circle"></i> {{ text_ajax_error }}</span>');
+    }).always(function () {
+      $button.prop('disabled', false).html(originalHtml);
     });
   });
 
