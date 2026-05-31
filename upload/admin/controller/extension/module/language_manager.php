@@ -1,0 +1,346 @@
+<?php
+/**
+ * Language Manager - Admin Controller
+ *
+ * Provides the module UI under Extensions > Modules > Language Manager.
+ * Supported actions:
+ *  index         – main listing of installed languages + preset selector
+ *  install       – install the module extension record
+ *  uninstall     – uninstall the module extension record
+ *  add           – add/sync one or more languages selected from presets
+ *  enable        – set status = 1 for a language
+ *  disable       – set status = 0 for a language
+ *  scan          – AJAX: return coverage report for a language
+ *  scaffold      – AJAX: create missing files for a language
+ *  sync_keys     – AJAX: append/overwrite missing translation keys
+ *
+ * @package  LanguageManager
+ */
+class ControllerExtensionModuleLanguageManager extends Controller {
+
+    private $error = [];
+
+    // ── Install / Uninstall ──────────────────────────────────────────────────
+
+    public function install() {
+        $this->load->model('extension/module/language_manager');
+        $this->model_extension_module_language_manager->install();
+    }
+
+    public function uninstall() {
+        $this->load->model('extension/module/language_manager');
+        $this->model_extension_module_language_manager->uninstall();
+    }
+
+    // ── Main Index ───────────────────────────────────────────────────────────
+
+    public function index() {
+        $this->load->language('extension/module/language_manager');
+        $this->load->model('extension/module/language_manager');
+
+        $this->document->setTitle($this->language->get('heading_title'));
+
+        $data = $this->_buildCommon();
+
+        // ── Installed languages ──────────────────────────────────────────────
+        $installed   = $this->model_extension_module_language_manager->getAllLanguages();
+        $presets     = $this->model_extension_module_language_manager->getPresets();
+        $installedDirs = array_column($installed, 'directory');
+
+        $data['languages'] = [];
+        foreach ($installed as $lang) {
+            $data['languages'][] = [
+                'language_id' => $lang['language_id'],
+                'name'        => $lang['name'],
+                'code'        => $lang['code'],
+                'directory'   => $lang['directory'],
+                'locale'      => $lang['locale'],
+                'status'      => $lang['status'],
+                'url_enable'  => $this->url->link('extension/module/language_manager/enable', 'user_token=' . $this->session->data['user_token'] . '&language_id=' . $lang['language_id'], true),
+                'url_disable' => $this->url->link('extension/module/language_manager/disable', 'user_token=' . $this->session->data['user_token'] . '&language_id=' . $lang['language_id'], true),
+                'url_scan'    => $this->url->link('extension/module/language_manager/scan', 'user_token=' . $this->session->data['user_token'] . '&directory=' . $lang['directory'], true),
+                'url_scaffold' => $this->url->link('extension/module/language_manager/scaffold', 'user_token=' . $this->session->data['user_token'] . '&directory=' . $lang['directory'], true),
+            ];
+        }
+
+        // ── Available presets not yet installed ──────────────────────────────
+        $data['presets'] = [];
+        foreach ($presets as $dir => $preset) {
+            $data['presets'][$dir] = [
+                'directory'   => $dir,
+                'name'        => $preset['name'],
+                'native_name' => $preset['native_name'],
+                'installed'   => in_array($dir, $installedDirs),
+            ];
+        }
+
+        // ── Form action URLs ─────────────────────────────────────────────────
+        $data['url_add']      = $this->url->link('extension/module/language_manager/add', 'user_token=' . $this->session->data['user_token'], true);
+        $data['url_scaffold_all'] = $this->url->link('extension/module/language_manager/scaffold', 'user_token=' . $this->session->data['user_token'], true);
+
+        // ── Flash messages ───────────────────────────────────────────────────
+        if (isset($this->session->data['success'])) {
+            $data['success'] = $this->session->data['success'];
+            unset($this->session->data['success']);
+        } else {
+            $data['success'] = '';
+        }
+        if ($this->error) {
+            $data['error_warning'] = implode('<br>', $this->error);
+        } else {
+            $data['error_warning'] = '';
+        }
+
+        $data['header']      = $this->load->controller('common/header');
+        $data['column_left'] = $this->load->controller('common/column_left');
+        $data['footer']      = $this->load->controller('common/footer');
+
+        $this->response->setOutput($this->load->view('extension/module/language_manager', $data));
+    }
+
+    // ── Add languages ────────────────────────────────────────────────────────
+
+    public function add() {
+        $this->load->language('extension/module/language_manager');
+        $this->load->model('extension/module/language_manager');
+
+        if (!$this->_hasPermission()) {
+            $this->session->data['error'] = $this->language->get('error_permission');
+            $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
+        }
+
+        $selected = isset($this->request->post['selected']) ? (array)$this->request->post['selected'] : [];
+        $reference = isset($this->request->post['reference']) ? $this->request->post['reference'] : 'en-gb';
+
+        if (empty($selected)) {
+            $this->session->data['error'] = $this->language->get('error_no_selection');
+            $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
+        }
+
+        $log     = [];
+        $hasError = false;
+
+        foreach ($selected as $directory) {
+            $preset = $this->model_extension_module_language_manager->getPreset($directory);
+            if (!$preset) {
+                $log[] = sprintf($this->language->get('text_log_preset_missing'), $directory);
+                $hasError = true;
+                continue;
+            }
+
+            // 1. Sync DB record.
+            $result = $this->model_extension_module_language_manager->syncLanguageRecord($directory, $preset);
+            $log[]  = sprintf($this->language->get('text_log_db_' . $result['action']), $preset['name']);
+
+            // 2. Scaffold missing files.
+            foreach (['admin', 'catalog'] as $area) {
+                $scaffold = $this->model_extension_module_language_manager->scaffoldMissingFiles($area, $directory, $reference);
+                if ($scaffold['created']) {
+                    $log[] = sprintf($this->language->get('text_log_files_created'), $area, count($scaffold['created']));
+                }
+                foreach ($scaffold['errors'] as $err) {
+                    $log[]    = $err;
+                    $hasError = true;
+                }
+            }
+
+            // 3. Sync missing keys in all present files.
+            foreach (['admin', 'catalog'] as $area) {
+                $files = $this->model_extension_module_language_manager->getLanguageFiles($area, $directory);
+                $totalKeys = 0;
+                foreach ($files as $relFile) {
+                    $sync = $this->model_extension_module_language_manager->syncMissingKeys($area, $directory, $reference, $relFile, false);
+                    if ($sync['error']) {
+                        $log[]    = $sync['error'];
+                        $hasError = true;
+                    } else {
+                        $totalKeys += count($sync['appended']);
+                    }
+                }
+                if ($totalKeys > 0) {
+                    $log[] = sprintf($this->language->get('text_log_keys_added'), $area, $totalKeys);
+                }
+            }
+        }
+
+        // Store log in session.
+        $this->session->data['success'] = implode('<br>', $log);
+        if ($hasError) {
+            $this->session->data['error'] = $this->language->get('error_partial');
+        }
+
+        $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
+    }
+
+    // ── Enable / Disable ─────────────────────────────────────────────────────
+
+    public function enable() {
+        $this->_setStatus(1);
+    }
+
+    public function disable() {
+        $this->_setStatus(0);
+    }
+
+    private function _setStatus($status) {
+        $this->load->language('extension/module/language_manager');
+        $this->load->model('extension/module/language_manager');
+
+        if (!$this->_hasPermission()) {
+            $this->session->data['error'] = $this->language->get('error_permission');
+        } else {
+            $languageId = isset($this->request->get['language_id']) ? (int)$this->request->get['language_id'] : 0;
+            if ($languageId) {
+                $this->model_extension_module_language_manager->setLanguageStatus($languageId, $status);
+                $this->session->data['success'] = $status
+                    ? $this->language->get('text_success_enabled')
+                    : $this->language->get('text_success_disabled');
+            }
+        }
+
+        $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
+    }
+
+    // ── Coverage Scan (AJAX) ─────────────────────────────────────────────────
+
+    public function scan() {
+        $this->load->language('extension/module/language_manager');
+        $this->load->model('extension/module/language_manager');
+
+        if (!$this->_hasPermission()) {
+            $this->response->setOutput(json_encode(['error' => $this->language->get('error_permission')]));
+            return;
+        }
+
+        $directory = isset($this->request->get['directory']) ? $this->request->get['directory'] : '';
+        $reference = isset($this->request->get['reference']) ? $this->request->get['reference'] : 'en-gb';
+
+        if (!$directory) {
+            $this->response->setOutput(json_encode(['error' => 'No directory specified']));
+            return;
+        }
+
+        $report = $this->model_extension_module_language_manager->getCoverageReport($directory, $reference);
+
+        // Build summary for display.
+        $summary = [];
+        foreach (['admin', 'catalog'] as $area) {
+            $missingFiles = count($report[$area]['missing_files']);
+            $missingKeys  = 0;
+            foreach ($report[$area]['files'] as $fileData) {
+                $missingKeys += count($fileData['missing_keys']);
+            }
+            $summary[$area] = [
+                'missing_files' => $missingFiles,
+                'missing_keys'  => $missingKeys,
+                'details'       => $report[$area],
+            ];
+        }
+
+        $this->response->setOutput(json_encode(['success' => true, 'report' => $summary]));
+    }
+
+    // ── Scaffold Missing Files (AJAX) ────────────────────────────────────────
+
+    public function scaffold() {
+        $this->load->language('extension/module/language_manager');
+        $this->load->model('extension/module/language_manager');
+
+        if (!$this->_hasPermission()) {
+            $this->response->setOutput(json_encode(['error' => $this->language->get('error_permission')]));
+            return;
+        }
+
+        $directory = isset($this->request->get['directory']) ? $this->request->get['directory'] : '';
+        $reference = isset($this->request->get['reference']) ? $this->request->get['reference'] : 'en-gb';
+
+        if (!$directory) {
+            $this->response->setOutput(json_encode(['error' => 'No directory specified']));
+            return;
+        }
+
+        $results = [];
+        foreach (['admin', 'catalog'] as $area) {
+            $r = $this->model_extension_module_language_manager->scaffoldMissingFiles($area, $directory, $reference);
+            $results[$area] = $r;
+        }
+
+        $this->response->setOutput(json_encode(['success' => true, 'results' => $results]));
+    }
+
+    // ── Sync Missing Keys (AJAX) ─────────────────────────────────────────────
+
+    public function sync_keys() {
+        $this->load->language('extension/module/language_manager');
+        $this->load->model('extension/module/language_manager');
+
+        if (!$this->_hasPermission()) {
+            $this->response->setOutput(json_encode(['error' => $this->language->get('error_permission')]));
+            return;
+        }
+
+        $directory = isset($this->request->get['directory']) ? $this->request->get['directory'] : '';
+        $reference = isset($this->request->get['reference']) ? $this->request->get['reference'] : 'en-gb';
+        $override  = !empty($this->request->get['override']);
+
+        if (!$directory) {
+            $this->response->setOutput(json_encode(['error' => 'No directory specified']));
+            return;
+        }
+
+        $totalAppended = 0;
+        $errors        = [];
+        foreach (['admin', 'catalog'] as $area) {
+            $files = $this->model_extension_module_language_manager->getLanguageFiles($area, $directory);
+            foreach ($files as $relFile) {
+                $r = $this->model_extension_module_language_manager->syncMissingKeys($area, $directory, $reference, $relFile, $override);
+                if ($r['error']) {
+                    $errors[] = $r['error'];
+                } else {
+                    $totalAppended += count($r['appended']);
+                }
+            }
+        }
+
+        $this->response->setOutput(json_encode([
+            'success'        => empty($errors),
+            'keys_appended'  => $totalAppended,
+            'errors'         => $errors,
+        ]));
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private function _hasPermission() {
+        return $this->user->hasPermission('modify', 'extension/module/language_manager');
+    }
+
+    private function _buildCommon() {
+        $data = [];
+
+        $data['breadcrumbs'] = [
+            [
+                'text' => $this->language->get('text_home'),
+                'href' => $this->url->link('common/dashboard', 'user_token=' . $this->session->data['user_token'], true),
+            ],
+            [
+                'text' => $this->language->get('text_extension'),
+                'href' => $this->url->link('extension/extension/module', 'user_token=' . $this->session->data['user_token'], true),
+            ],
+            [
+                'text' => $this->language->get('heading_title'),
+                'href' => $this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true),
+            ],
+        ];
+
+        // Pass error/success from session if present.
+        if (isset($this->session->data['error'])) {
+            $data['error_warning'] = $this->session->data['error'];
+            unset($this->session->data['error']);
+        } else {
+            $data['error_warning'] = '';
+        }
+
+        return $data;
+    }
+}
