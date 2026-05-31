@@ -19,7 +19,7 @@
       <i class="fa fa-exclamation-circle"></i>
       <ul class="list-unstyled" style="margin:0;">
         {% for error_warning in error_warnings %}
-        <li>{{ error_warning }}</li>
+        <li>{{ error_warning|e }}</li>
         {% endfor %}
       </ul>
       <button type="button" class="close" data-dismiss="alert">&times;</button>
@@ -31,7 +31,7 @@
       <i class="fa fa-check-circle"></i>
       <ul class="list-unstyled" style="margin:0;">
         {% for success_message in success_messages %}
-        <li>{{ success_message }}</li>
+        <li>{{ success_message|e }}</li>
         {% endfor %}
       </ul>
       <button type="button" class="close" data-dismiss="alert">&times;</button>
