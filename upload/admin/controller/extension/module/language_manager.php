@@ -135,7 +135,13 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         }
         if ($this->error) {
             $existingError = isset($data['error_warning']) ? $data['error_warning'] : '';
-            $data['error_warning'] = $existingError . ($existingError ? '<br>' : '') . implode('<br>', $this->error);
+            $escapedErrors = [];
+
+            foreach ($this->error as $error) {
+                $escapedErrors[] = $this->escapeMessage($error);
+            }
+
+            $data['error_warning'] = $existingError . ($existingError ? '<br>' : '') . implode('<br>', $escapedErrors);
         }
 
         $data['header']      = $this->load->controller('common/header');
@@ -179,23 +185,23 @@ class ControllerExtensionModuleLanguageManager extends Controller {
             $directory = $this->normalizeLanguageDirectory($directory);
             $preset = $directory ? $this->model_extension_module_language_manager->getPreset($directory) : null;
             if (!$preset) {
-                $log[] = sprintf($this->language->get('text_log_preset_missing'), $directory);
+                $log[] = $this->escapeMessage(sprintf($this->language->get('text_log_preset_missing'), $directory));
                 $hasError = true;
                 continue;
             }
 
             // 1. Sync DB record.
             $result = $this->model_extension_module_language_manager->syncLanguageRecord($directory, $preset);
-            $log[]  = sprintf($this->language->get('text_log_db_' . $result['action']), $preset['name']);
+            $log[] = $this->escapeMessage(sprintf($this->language->get('text_log_db_' . $result['action']), $preset['name']));
 
             // 2. Scaffold missing files.
             foreach (['admin', 'catalog'] as $area) {
                 $scaffold = $this->model_extension_module_language_manager->scaffoldMissingFiles($area, $directory, $reference);
                 if ($scaffold['created']) {
-                    $log[] = sprintf($this->language->get('text_log_files_created'), $area, count($scaffold['created']));
+                    $log[] = $this->escapeMessage(sprintf($this->language->get('text_log_files_created'), $area, count($scaffold['created'])));
                 }
                 foreach ($scaffold['errors'] as $err) {
-                    $log[]    = $err;
+                    $log[] = $this->escapeMessage($err);
                     $hasError = true;
                 }
             }
@@ -207,14 +213,14 @@ class ControllerExtensionModuleLanguageManager extends Controller {
                 foreach ($files as $relFile) {
                     $sync = $this->model_extension_module_language_manager->syncMissingKeys($area, $directory, $reference, $relFile, false);
                     if ($sync['error']) {
-                        $log[]    = $sync['error'];
+                        $log[] = $this->escapeMessage($sync['error']);
                         $hasError = true;
                     } else {
                         $totalKeys += count($sync['appended']);
                     }
                 }
                 if ($totalKeys > 0) {
-                    $log[] = sprintf($this->language->get('text_log_keys_added'), $area, $totalKeys);
+                    $log[] = $this->escapeMessage(sprintf($this->language->get('text_log_keys_added'), $area, $totalKeys));
                 }
             }
         }
@@ -458,5 +464,9 @@ class ControllerExtensionModuleLanguageManager extends Controller {
     private function jsonResponse(array $payload) {
         $this->response->addHeader('Content-Type: application/json');
         $this->response->setOutput(json_encode($payload));
+    }
+
+    private function escapeMessage($message) {
+        return htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
     }
 }
