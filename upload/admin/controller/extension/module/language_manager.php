@@ -134,7 +134,8 @@ class ControllerExtensionModuleLanguageManager extends Controller {
             $data['success'] = '';
         }
         if ($this->error) {
-            $data['error_warning'] .= ($data['error_warning'] ? '<br>' : '') . implode('<br>', $this->error);
+            $existingError = isset($data['error_warning']) ? $data['error_warning'] : '';
+            $data['error_warning'] = $existingError . ($existingError ? '<br>' : '') . implode('<br>', $this->error);
         }
 
         $data['header']      = $this->load->controller('common/header');
