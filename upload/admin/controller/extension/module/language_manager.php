@@ -127,21 +127,21 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         $data['url_add'] = $this->url->link('extension/module/language_manager/add', 'user_token=' . $this->session->data['user_token'], true);
 
         // ── Flash messages ───────────────────────────────────────────────────
-        if (isset($this->session->data['success'])) {
-            $data['success'] = $this->session->data['success'];
-            unset($this->session->data['success']);
+        if (isset($this->session->data['success_messages'])) {
+            $data['success_messages'] = (array)$this->session->data['success_messages'];
+            unset($this->session->data['success_messages']);
         } else {
-            $data['success'] = '';
+            $data['success_messages'] = [];
         }
         if ($this->error) {
-            $existingError = isset($data['error_warning']) ? $data['error_warning'] : '';
+            $existingErrors = isset($data['error_warnings']) ? $data['error_warnings'] : [];
             $escapedErrors = [];
 
             foreach ($this->error as $error) {
                 $escapedErrors[] = $this->escapeMessage($error);
             }
 
-            $data['error_warning'] = $existingError . ($existingError ? '<br>' : '') . implode('<br>', $escapedErrors);
+            $data['error_warnings'] = array_merge($existingErrors, $escapedErrors);
         }
 
         $data['header']      = $this->load->controller('common/header');
@@ -226,7 +226,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         }
 
         // Store log in session.
-        $this->session->data['success'] = implode('<br>', $log);
+        $this->session->data['success_messages'] = $log;
         if ($hasError) {
             $this->session->data['error_warning'] = $this->language->get('error_partial');
         }
@@ -254,9 +254,11 @@ class ControllerExtensionModuleLanguageManager extends Controller {
             $languageId = isset($this->request->get['language_id']) ? (int)$this->request->get['language_id'] : 0;
             if ($languageId) {
                 $this->model_extension_module_language_manager->setLanguageStatus($languageId, $status);
-                $this->session->data['success'] = $status
-                    ? $this->language->get('text_success_enabled')
-                    : $this->language->get('text_success_disabled');
+                $this->session->data['success_messages'] = [
+                    $status
+                        ? $this->language->get('text_success_enabled')
+                        : $this->language->get('text_success_disabled')
+                ];
             }
         }
 
@@ -412,10 +414,10 @@ class ControllerExtensionModuleLanguageManager extends Controller {
 
         // Pass error/success from session if present.
         if (isset($this->session->data['error_warning'])) {
-            $data['error_warning'] = $this->session->data['error_warning'];
+            $data['error_warnings'] = (array)$this->session->data['error_warning'];
             unset($this->session->data['error_warning']);
         } else {
-            $data['error_warning'] = '';
+            $data['error_warnings'] = [];
         }
 
         return $data;

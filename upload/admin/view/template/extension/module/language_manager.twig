@@ -14,18 +14,26 @@
   <div class="container-fluid">
 
     {# ── Alert messages ───────────────────────────────────────────────────── #}
-    {% if error_warning %}
+    {% if error_warnings %}
     <div class="alert alert-danger alert-dismissible">
       <i class="fa fa-exclamation-circle"></i>
-      {{ error_warning | raw }}
+      <ul class="list-unstyled" style="margin:0;">
+        {% for error_warning in error_warnings %}
+        <li>{{ error_warning }}</li>
+        {% endfor %}
+      </ul>
       <button type="button" class="close" data-dismiss="alert">&times;</button>
     </div>
     {% endif %}
 
-    {% if success %}
+    {% if success_messages %}
     <div class="alert alert-success alert-dismissible">
       <i class="fa fa-check-circle"></i>
-      {{ success | raw }}
+      <ul class="list-unstyled" style="margin:0;">
+        {% for success_message in success_messages %}
+        <li>{{ success_message }}</li>
+        {% endfor %}
+      </ul>
       <button type="button" class="close" data-dismiss="alert">&times;</button>
     </div>
     {% endif %}
@@ -278,7 +286,7 @@
         if (mf > 0 && info.details && info.details.missing_files) {
           html += '<ul class="text-danger small">';
           $.each(info.details.missing_files, function (i, f) {
-            html += '<li>' + f + '</li>';
+            html += '<li>' + escapeHtml(f) + '</li>';
           });
           html += '</ul>';
         }
