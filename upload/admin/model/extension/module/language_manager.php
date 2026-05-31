@@ -285,7 +285,7 @@ class ModelExtensionModuleLanguageManager extends Model {
 
     /**
      * Append missing keys (from reference) to an existing target file.
-     * Keys are written as un-translated stubs (value = reference value).
+     * Keys are written with the reference language value as a placeholder.
      *
      * @param  string $area
      * @param  string $directory

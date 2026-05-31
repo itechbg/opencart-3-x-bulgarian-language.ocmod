@@ -264,7 +264,7 @@
 
     $.getJSON(url, function (data) {
       if (data.error) {
-        $result.html('<span class="text-danger"><i class="fa fa-times-circle"></i> ' + data.error + '</span>');
+        $result.html('<span class="text-danger"><i class="fa fa-times-circle"></i> ' + escapeHtml(data.error) + '</span>');
         return;
       }
 
