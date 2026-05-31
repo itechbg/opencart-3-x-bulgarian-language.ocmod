@@ -152,7 +152,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         $this->load->model('extension/module/language_manager');
 
         if (!$this->_hasPermission()) {
-            $this->session->data['error'] = $this->language->get('error_permission');
+            $this->session->data['error_warning'] = $this->language->get('error_permission');
             $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
             return;
         }
@@ -161,13 +161,13 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         $reference = $this->getValidReference(isset($this->request->post['reference']) ? $this->request->post['reference'] : 'en-gb');
 
         if (empty($selected)) {
-            $this->session->data['error'] = $this->language->get('error_no_selection');
+            $this->session->data['error_warning'] = $this->language->get('error_no_selection');
             $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
             return;
         }
 
         if ($reference === null) {
-            $this->session->data['error'] = $this->language->get('error_invalid_reference');
+            $this->session->data['error_warning'] = $this->language->get('error_invalid_reference');
             $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
             return;
         }
@@ -222,7 +222,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         // Store log in session.
         $this->session->data['success'] = implode('<br>', $log);
         if ($hasError) {
-            $this->session->data['error'] = $this->language->get('error_partial');
+            $this->session->data['error_warning'] = $this->language->get('error_partial');
         }
 
         $this->response->redirect($this->url->link('extension/module/language_manager', 'user_token=' . $this->session->data['user_token'], true));
@@ -243,7 +243,7 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         $this->load->model('extension/module/language_manager');
 
         if (!$this->_hasPermission()) {
-            $this->session->data['error'] = $this->language->get('error_permission');
+            $this->session->data['error_warning'] = $this->language->get('error_permission');
         } else {
             $languageId = isset($this->request->get['language_id']) ? (int)$this->request->get['language_id'] : 0;
             if ($languageId) {
@@ -405,9 +405,9 @@ class ControllerExtensionModuleLanguageManager extends Controller {
         ];
 
         // Pass error/success from session if present.
-        if (isset($this->session->data['error'])) {
-            $data['error_warning'] = $this->session->data['error'];
-            unset($this->session->data['error']);
+        if (isset($this->session->data['error_warning'])) {
+            $data['error_warning'] = $this->session->data['error_warning'];
+            unset($this->session->data['error_warning']);
         } else {
             $data['error_warning'] = '';
         }
