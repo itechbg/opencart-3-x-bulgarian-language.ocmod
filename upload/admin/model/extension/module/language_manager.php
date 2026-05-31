@@ -132,8 +132,7 @@ class ModelExtensionModuleLanguageManager extends Model {
         if (!is_dir($base)) {
             return [];
         }
-        $files   = [];
-        $pattern = $base . '{**/*.php,*.php}';
+        $files = [];
         // Use RecursiveIterator for full depth.
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($base, RecursiveDirectoryIterator::SKIP_DOTS),
